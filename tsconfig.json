@@ -5,9 +5,7 @@
     "lib": ["ESNext", "DOM"],
     "moduleResolution": "bundler",
     "declaration": true,                // 타입 정의 파일(.d.ts) 생성 필수
-    "emitDecoratorMetadata": true,      // 업로드하신 코드의 데코레이터 사용 지원
-    "experimentalDecorators": true,     // 데코레이터 사용 지원
-    "outDir": "./dist",                 // 빌드 결과물 경로
+"outDir": "./dist",                 // 빌드 결과물 경로
     "rootDir": "./src",
     "strict": true,
     "skipLibCheck": true,

@@ -1,7 +1,3 @@
-import "reflect-metadata";
-import { isObject, isString } from "@moca-labs/entity-kit-ts";
-
-export const API_META_KEY = Symbol("mc:api");
 export const METHOD_META_KEY = Symbol("mc:method");
 export const REQUEST_KEY = Symbol("mc:requestBody");
 export const RESPONSE_TYPE_KEY = Symbol("mc:responseType");
@@ -12,79 +8,60 @@ export const HANDLER_SYMBOL_MAP_KEY = Symbol("mc:handlerSymbolMap");
 export const FORMDATA_KEY = Symbol("mc:formdata");
 export const HEADER_KEY = Symbol("mc:header");
 
-const createKeyedParamDecorator = (metaKey: symbol) => {
-	const apply = (key: string | undefined, target: Object, propKey: string | symbol, paramIdx: number) => {
-		const existing: { [k: string]: number } = Reflect.getMetadata(metaKey, target, propKey) || {};
-		let resolvedKey: string;
-		if (key) {
-			resolvedKey = key;
-		} else {
-			const fn = (target as any)[propKey as string];
-			const match = fn?.toString().match(/\(([^)]*)\)/);
-			const params = match?.[1].split(",").map((p: string) => p.trim().split(/[\s:=]/)[0]) ?? [];
-			resolvedKey = params[paramIdx] ?? `param${paramIdx}`;
-		}
-		existing[resolvedKey] = paramIdx;
-		Reflect.defineMetadata(metaKey, existing, target, propKey);
+const fnMeta = new WeakMap<Function, Map<symbol, unknown>>();
+
+export function setFnMeta(fn: Function, key: symbol, value: unknown): void {
+	let m = fnMeta.get(fn);
+	if (!m) {
+		m = new Map();
+		fnMeta.set(fn, m);
+	}
+	m.set(key, value);
+}
+
+export function getFnMeta(fn: Function, key: symbol): unknown {
+	return fnMeta.get(fn)?.get(key);
+}
+
+type MethodDec = (value: Function, context: ClassMethodDecoratorContext) => void;
+
+const createDecorator = (method: string, path: string, type: new (res: unknown) => unknown): MethodDec =>
+	(value, _ctx) => {
+		setFnMeta(value, METHOD_META_KEY, { method, path });
+		setFnMeta(value, RESPONSE_TYPE_KEY, type);
 	};
 
-	return (targetOrKey?: Object | string, propertyKey?: string | symbol, parameterIndex?: number): any => {
-		if (isObject(targetOrKey) && propertyKey !== undefined && parameterIndex !== undefined) {
-			apply(undefined, targetOrKey, propertyKey, parameterIndex);
-		} else {
-			const key = isString(targetOrKey) ? targetOrKey : undefined;
-			return (target: Object, propKey: string | symbol, paramIdx: number) => apply(key, target, propKey, paramIdx);
-		}
-	};
-};
+const indexParamDec = (metaKey: symbol) => (paramIdx: number): MethodDec =>
+	(value, _ctx) => setFnMeta(value, metaKey, paramIdx);
 
-const createDecorator = (method: string, path: string, type: new (res: any) => any) => {
-	return (target: any, propertyKey: string) => {
-		Reflect.defineMetadata(METHOD_META_KEY, { method, path }, target, propertyKey);
-		Reflect.defineMetadata(RESPONSE_TYPE_KEY, type, target, propertyKey);
+const keyedParamDec = (metaKey: symbol) => (key: string, paramIdx: number): MethodDec =>
+	(value, _ctx) => {
+		const existing = (getFnMeta(value, metaKey) as Record<string, number>) ?? {};
+		existing[key] = paramIdx;
+		setFnMeta(value, metaKey, existing);
 	};
-};
 
-const createIndexParamDecorator = (metaKey: symbol) => {
-	return (target: Object, propertyKey: string | symbol, parameterIndex: number) => {
-		Reflect.defineMetadata(metaKey, parameterIndex, target, propertyKey);
-	};
-};
+const handlerDec = (metaKey: symbol) => (fn: Function | symbol): MethodDec =>
+	(value, _ctx) => setFnMeta(value, metaKey, fn);
 
-const createHandlerDecorator = (metaKey: symbol) => {
-	return (fn: Function | symbol) => (target: any, propertyKey: string) => {
-		Reflect.defineMetadata(metaKey, fn, target, propertyKey);
-	};
-};
-
-const createSymbolMapDecorator = (mapKey: symbol) => {
-	return (sym: symbol) => (target: any, propertyKey: string) => {
-		const map: Map<symbol, string> = Reflect.getMetadata(mapKey, target) || new Map();
-		map.set(sym, propertyKey);
-		Reflect.defineMetadata(mapKey, map, target);
-	};
-};
-
-type KeyedParamDecorator = {
-	(key: string): ParameterDecorator;
-	(target: Object, propertyKey: string | symbol, parameterIndex: number): void;
-};
+const symbolMapDec = () => (sym: symbol): MethodDec =>
+	(value, _ctx) => setFnMeta(value, HANDLER_SYMBOL_MAP_KEY, sym);
 
 const McAxiosDecorators = {
-	GET: (url: string, type: new (res: any) => any): ((target: any, propertyKey: string) => void) => createDecorator("GET", url, type),
-	POST: (url: string, type: new (res: any) => any): ((target: any, propertyKey: string) => void) => createDecorator("POST", url, type),
-	PUT: (url: string, type: new (res: any) => any): ((target: any, propertyKey: string) => void) => createDecorator("PUT", url, type),
-	DELETE: (url: string, type: new (res: any) => any): ((target: any, propertyKey: string) => void) => createDecorator("DELETE", url, type),
-	MULTIPART: (url: string, type: new (res: any) => any): ((target: any, propertyKey: string) => void) => createDecorator("MULTIPART", url, type),
-	PATCH: (url: string, type: new (res: any) => any): ((target: any, propertyKey: string) => void) => createDecorator("PATCH", url, type),
-	REQUEST: (target: Object, propertyKey: string | symbol, parameterIndex: number): void => createIndexParamDecorator(REQUEST_KEY)(target, propertyKey, parameterIndex),
-	FORM_DATA: (target: Object, propertyKey: string | symbol, parameterIndex: number): void => createIndexParamDecorator(FORMDATA_KEY)(target, propertyKey, parameterIndex),
-	HEADER: createKeyedParamDecorator(HEADER_KEY) as unknown as KeyedParamDecorator,
-	PATH: createKeyedParamDecorator(PATH_PARAMS_KEY) as unknown as KeyedParamDecorator,
-	SUCCESS: (fn: Function | symbol): ((target: any, propertyKey: string) => void) => createHandlerDecorator(SUCCESS_HANDLER_KEY)(fn),
-	ERROR: (fn: Function | symbol): ((target: any, propertyKey: string) => void) => createHandlerDecorator(ERROR_HANDLER_KEY)(fn),
-	SUCCESS_HANDLER: (sym: symbol): ((target: any, propertyKey: string) => void) => createSymbolMapDecorator(HANDLER_SYMBOL_MAP_KEY)(sym),
-	ERROR_HANDLER: (sym: symbol): ((target: any, propertyKey: string) => void) => createSymbolMapDecorator(HANDLER_SYMBOL_MAP_KEY)(sym),
+	GET: (url: string, type: new (res: unknown) => unknown) => createDecorator("GET", url, type),
+	POST: (url: string, type: new (res: unknown) => unknown) => createDecorator("POST", url, type),
+	PUT: (url: string, type: new (res: unknown) => unknown) => createDecorator("PUT", url, type),
+	DELETE: (url: string, type: new (res: unknown) => unknown) => createDecorator("DELETE", url, type),
+	MULTIPART: (url: string, type: new (res: unknown) => unknown) => createDecorator("MULTIPART", url, type),
+	PATCH: (url: string, type: new (res: unknown) => unknown) => createDecorator("PATCH", url, type),
+	REQUEST: indexParamDec(REQUEST_KEY),
+	FORM_DATA: indexParamDec(FORMDATA_KEY),
+	HEADER: keyedParamDec(HEADER_KEY),
+	PATH: keyedParamDec(PATH_PARAMS_KEY),
+	SUCCESS: handlerDec(SUCCESS_HANDLER_KEY),
+	ERROR: handlerDec(ERROR_HANDLER_KEY),
+	SUCCESS_HANDLER: symbolMapDec(),
+	ERROR_HANDLER: symbolMapDec(),
 };
 
 export default McAxiosDecorators;
