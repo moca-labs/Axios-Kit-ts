@@ -1,18 +1,27 @@
 import axios, { AxiosHeaders, type AxiosInstance } from "axios";
 import {
-	FORMDATA_KEY,
 	HANDLER_SYMBOL_MAP_KEY,
 	HEADER_KEY,
 	METHOD_META_KEY,
-	PATH_PARAMS_KEY,
-	REQUEST_KEY,
+	PATH_OVERRIDE_KEY,
+	REQUEST_OVERRIDE_KEY,
 	RESPONSE_TYPE_KEY,
 	SUCCESS_HANDLER_KEY,
 	ERROR_HANDLER_KEY,
+	extractParamNames,
 	getFnMeta,
 } from "./McAxiosDecorators";
 import McRequest from "./McRequest";
 import { isFunction, isSymbol } from "@moca-labs/entity-kit-ts";
+
+function buildAutoPathParams(url: string, paramNames: string[]): Record<string, number> {
+	const result: Record<string, number> = {};
+	for (const [, key] of url.matchAll(/\{(\w+)\}/g)) {
+		const idx = paramNames.indexOf(key);
+		if (idx >= 0) result[key] = idx;
+	}
+	return result;
+}
 
 export default abstract class McAxios {
 	private _axios: AxiosInstance;
@@ -50,18 +59,21 @@ export default abstract class McAxios {
 		return {
 			method: meta.method,
 			path: meta.path,
+			fn,
 			successHandler: getFnMeta(fn, SUCCESS_HANDLER_KEY) as Function | symbol | undefined,
 			errorHandler: getFnMeta(fn, ERROR_HANDLER_KEY) as Function | symbol | undefined,
-			requestBody: getFnMeta(fn, REQUEST_KEY) as number | undefined,
 			responseType: getFnMeta(fn, RESPONSE_TYPE_KEY),
-			formData: getFnMeta(fn, FORMDATA_KEY) as number | undefined,
-			pathParams: (getFnMeta(fn, PATH_PARAMS_KEY) ?? {}) as { [key: string]: number },
-			headerParam: (getFnMeta(fn, HEADER_KEY) ?? {}) as { [key: string]: number },
+			headerParam: (getFnMeta(fn, HEADER_KEY) ?? {}) as Record<string, number>,
+			pathOverride: (getFnMeta(fn, PATH_OVERRIDE_KEY) ?? {}) as Record<string, number>,
+			requestOverride: getFnMeta(fn, REQUEST_OVERRIDE_KEY) as number | undefined,
 			symbolMap: this.buildSymbolMap(proto),
 		};
 	}
 
-	private resolveHandler(handler: Function | symbol | undefined, symbolMap: Map<symbol, string>): ((...args: unknown[]) => Promise<unknown>) | undefined {
+	private resolveHandler(
+		handler: Function | symbol | undefined,
+		symbolMap: Map<symbol, string>,
+	): ((...args: unknown[]) => Promise<unknown>) | undefined {
 		if (isSymbol(handler)) {
 			const methodName = symbolMap.get(handler);
 			if (methodName) return (...args: unknown[]) => (this as unknown as Record<string, Function>)[methodName](...args);
@@ -73,14 +85,14 @@ export default abstract class McAxios {
 
 	private buildMultipartEndpoint(
 		url: string,
-		formDataIdx: number | undefined,
 		responseType: unknown,
 		resolvedSuccess: ((...args: unknown[]) => Promise<unknown>) | undefined,
 		resolvedError: ((...args: unknown[]) => Promise<unknown>) | undefined,
 	): (...args: unknown[]) => Promise<unknown> {
 		return async (...args: unknown[]) => {
-			const data = formDataIdx !== undefined ? args[formDataIdx] : undefined;
-			const apiFunc = async () => this._axios.request({ method: "POST", url, data, headers: { "Content-Type": "multipart/form-data" } });
+			const data = args.find((a) => a instanceof FormData);
+			const apiFunc = async () =>
+				this._axios.request({ method: "POST", url, data, headers: { "Content-Type": "multipart/form-data" } });
 			try {
 				const response = await apiFunc();
 				if (resolvedSuccess) return new (responseType as new (res: unknown) => unknown)(await resolvedSuccess(response, apiFunc));
@@ -99,13 +111,12 @@ export default abstract class McAxios {
 	private buildRequestEndpoint(
 		method: string,
 		path: string,
-		pathParams: { [key: string]: number },
-		headerParam: { [key: string]: number },
-		requestBodyIdx: number | undefined,
+		pathParams: Record<string, number>,
+		headerParam: Record<string, number>,
+		requestOverride: number | undefined,
 		responseType: unknown,
 		resolvedSuccess: ((...args: unknown[]) => Promise<unknown>) | undefined,
 		resolvedError: ((...args: unknown[]) => Promise<unknown>) | undefined,
-		name: string,
 	): (...args: unknown[]) => Promise<unknown> {
 		return async (...args: unknown[]) => {
 			let url = path;
@@ -113,14 +124,12 @@ export default abstract class McAxios {
 				url = url.replace(`{${key}}`, encodeURIComponent(String(args[index])));
 			}
 
-			const request = requestBodyIdx !== undefined ? args[requestBodyIdx] : undefined;
-			if (request !== undefined && request instanceof McRequest === false) {
-				const err = new Error("Invalid request format.");
-				if (resolvedError) await resolvedError(err);
-				throw err;
-			}
+			// @REQUEST 명시 시 해당 인덱스 사용, 생략 시 instanceof McRequest 자동 감지
+			const request =
+				requestOverride !== undefined && requestOverride >= 0
+					? args[requestOverride]
+					: args.find((a) => a instanceof McRequest);
 			const data = request !== undefined ? (request as McRequest).toJson() : undefined;
-			console.log(`param -> ${name} :: ${data}`);
 
 			const apiFunc = async () => {
 				const headers: AxiosHeaders = this.header() ?? new AxiosHeaders();
@@ -154,14 +163,16 @@ export default abstract class McAxios {
 			const meta = this.readEndpointMeta(proto, name);
 			if (!meta) continue;
 
-			const { method, path, successHandler, errorHandler, requestBody, responseType, formData, pathParams, headerParam, symbolMap } = meta;
+			const { method, path, fn, successHandler, errorHandler, responseType, headerParam, pathOverride, requestOverride, symbolMap } = meta;
 			const resolvedSuccess = this.resolveHandler(successHandler, symbolMap);
 			const resolvedError = this.resolveHandler(errorHandler, symbolMap);
+			// 자동 감지 후 명시적 @PATH 오버라이드 병합 (명시가 우선)
+			const pathParams = { ...buildAutoPathParams(path, extractParamNames(fn as Function)), ...pathOverride };
 
 			const endpointFn =
 				method === "MULTIPART"
-					? this.buildMultipartEndpoint(path, formData, responseType, resolvedSuccess, resolvedError)
-					: this.buildRequestEndpoint(method, path, pathParams, headerParam, requestBody, responseType, resolvedSuccess, resolvedError, name);
+					? this.buildMultipartEndpoint(path, responseType, resolvedSuccess, resolvedError)
+					: this.buildRequestEndpoint(method, path, pathParams, headerParam, requestOverride, responseType, resolvedSuccess, resolvedError);
 
 			Object.defineProperty(this, name, { value: endpointFn });
 		}
