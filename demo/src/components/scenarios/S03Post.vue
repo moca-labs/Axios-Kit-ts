@@ -52,11 +52,9 @@ async function run() {
 
 <span class="cmt">// api.ts</span>
 <span class="dec">@McAxios.POST</span>(<span class="str">`${BASE}/posts`</span>, <span class="cls">PostEntity</span>)
-<span class="fn">createPost</span>(req: <span class="cls">CreatePostRequest</span>): <span class="ty">Promise</span>&lt;<span class="cls">PostEntity</span>&gt; {
-  <span class="kw">return</span> <span class="kw">this</span>.<span class="fn">stub</span>();
-}
+<span class="fn">createPost</span>!: (req: <span class="cls">CreatePostRequest</span>) =&gt; <span class="ty">Promise</span>&lt;<span class="cls">PostEntity</span>&gt;;
 
-<span class="cmt">// McRequest 서브클래스는 instanceof로 자동 감지</span>
+<span class="cmt">// McRequest 서브클래스는 instanceof로 호출 시 자동 감지</span>
 <span class="cmt">// → req.toJson() 결과가 요청 바디로 전송됨</span></pre>
         </div>
       </div>

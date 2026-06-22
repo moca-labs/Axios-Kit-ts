@@ -1,18 +1,23 @@
-import axios, { AxiosHeaders, type AxiosInstance } from "axios";
+import { isFunction, isSymbol } from "@moca-labs/entity-kit-ts";
+import axios, { AxiosHeaders, type AxiosInstance, type AxiosResponse } from "axios";
 import {
+	BODY_FN_KEY,
+	ERROR_HANDLER_KEY,
+	extractParamNames,
+	getFnMeta,
 	HANDLER_SYMBOL_MAP_KEY,
+	HAS_INITIALIZER_KEY,
 	HEADER_KEY,
 	METHOD_META_KEY,
+	PARAM_NAMES_KEY,
 	PATH_OVERRIDE_KEY,
 	REQUEST_OVERRIDE_KEY,
 	RESPONSE_TYPE_KEY,
 	SUCCESS_HANDLER_KEY,
-	ERROR_HANDLER_KEY,
-	extractParamNames,
-	getFnMeta,
 } from "./McAxiosDecorators";
 import McRequest from "./McRequest";
-import { isFunction, isSymbol } from "@moca-labs/entity-kit-ts";
+
+type Executor<T> = (response: AxiosResponse, resolve: (value: T) => void, reject: (reason?: unknown) => void) => void;
 
 function buildAutoPathParams(url: string, paramNames: string[]): Record<string, number> {
 	const result: Record<string, number> = {};
@@ -23,7 +28,21 @@ function buildAutoPathParams(url: string, paramNames: string[]): Record<string, 
 	return result;
 }
 
+// Used for body-free `!` declarations: URL placeholders map to args in the order they appear.
+function buildOrderedPathParams(url: string): Record<string, number> {
+	const result: Record<string, number> = {};
+	let idx = 0;
+	for (const [, key] of url.matchAll(/\{(\w+)\}/g)) {
+		result[key] = idx++;
+	}
+	return result;
+}
+
 export default abstract class McAxios {
+	// Sentinels returned by dispatch() — detected at construction time from the method body.
+	private static readonly _DEFAULT_SENTINEL = Symbol("mc:default");
+	private static readonly _CUSTOM_SENTINEL = Symbol("mc:custom");
+
 	private _axios: AxiosInstance;
 
 	public constructor() {
@@ -31,6 +50,31 @@ export default abstract class McAxios {
 		this.bindEndpoints();
 	}
 
+	// ─── Public API ────────────────────────────────────────────────────────────
+
+	// Use in a method body to signal "run the default HTTP flow":
+	//   getPost(id: string): Promise<PostEntity> { return this.dispatch(); }
+	protected dispatch(): never;
+
+	// Use in a method body to handle the AxiosResponse directly.
+	// resolve() → the value flows into @SUCCESS_HANDLER (if present) and is returned.
+	// reject()  → goes to @ERROR_HANDLER (if present), then re-throws.
+	//   getPost(id: string): Promise<PostEntity> {
+	//     return this.dispatch((response, resolve, reject) => {
+	//       response.data.active ? resolve(new PostEntity(response.data))
+	//                            : reject(new Error('inactive'));
+	//     });
+	//   }
+	protected dispatch<T>(executor: Executor<T>): Promise<T>;
+
+	protected dispatch<T>(executor?: Executor<T>): never | Promise<T> {
+		if (executor) {
+			return { [McAxios._CUSTOM_SENTINEL]: executor } as unknown as Promise<T>;
+		}
+		return { [McAxios._DEFAULT_SENTINEL]: true } as unknown as never;
+	}
+
+	/** @deprecated Use dispatch() instead */
 	protected stub(): never {
 		const stack = new Error().stack?.split("\n");
 		const callerLine = stack?.[2] ?? "";
@@ -38,7 +82,52 @@ export default abstract class McAxios {
 		throw new Error(`[McAxios] '${methodName}' is not bound. Make sure your class properly extends McAxios.`);
 	}
 
+	// ─── Field-decorator endpoint builder ─────────────────────────────────────
+
+	// Called by field decorators' init functions to create the endpoint at construction time.
+	protected __buildFieldEndpoint(method: string, path: string, responseType: unknown, meta: Map<symbol, unknown>): (...args: unknown[]) => Promise<unknown> {
+		const paramNames = (meta.get(PARAM_NAMES_KEY) as string[]) ?? [];
+		const hasInitializer = (meta.get(HAS_INITIALIZER_KEY) as boolean) ?? false;
+		const successHandler = meta.get(SUCCESS_HANDLER_KEY) as Function | symbol | undefined;
+		const errorHandler = meta.get(ERROR_HANDLER_KEY) as Function | symbol | undefined;
+		const headerParam = (meta.get(HEADER_KEY) ?? {}) as Record<string, number>;
+		const pathOverride = (meta.get(PATH_OVERRIDE_KEY) ?? {}) as Record<string, number>;
+		const requestOverride = meta.get(REQUEST_OVERRIDE_KEY) as number | undefined;
+
+		const proto = Object.getPrototypeOf(this) as object;
+		const symbolMap = this.buildSymbolMap(proto);
+		const resolvedSuccess = this.resolveHandler(successHandler, symbolMap);
+		const resolvedError = this.resolveHandler(errorHandler, symbolMap);
+
+		const autoPath = hasInitializer ? buildAutoPathParams(path, paramNames) : buildOrderedPathParams(path);
+		const pathParams = { ...autoPath, ...pathOverride };
+
+		// Probe the body function for a dispatch() sentinel.
+		const bodyFn = meta.get(BODY_FN_KEY) as Function | undefined;
+		const customExecutor = bodyFn ? this.probeExecutor(bodyFn) : undefined;
+
+		return method === "MULTIPART"
+			? this.buildMultipartEndpoint(path, responseType, resolvedSuccess, resolvedError, customExecutor)
+			: this.buildRequestEndpoint(method, path, pathParams, headerParam, requestOverride, responseType, resolvedSuccess, resolvedError, customExecutor);
+	}
+
 	protected abstract header(): AxiosHeaders | undefined;
+
+	// ─── Internals ─────────────────────────────────────────────────────────────
+
+	// Calls fn() to detect whether it returned a dispatch(executor) sentinel.
+	// Returns the executor if found, undefined otherwise (default flow).
+	private probeExecutor(fn: Function): Executor<unknown> | undefined {
+		try {
+			const result = fn.call(this);
+			if (result && typeof result === "object" && McAxios._CUSTOM_SENTINEL in result) {
+				return (result as Record<symbol, unknown>)[McAxios._CUSTOM_SENTINEL] as Executor<unknown>;
+			}
+		} catch {
+			/* stub() or anything that throws → default flow */
+		}
+		return undefined;
+	}
 
 	private buildSymbolMap(proto: object): Map<symbol, string> {
 		const map = new Map<symbol, string>();
@@ -70,10 +159,7 @@ export default abstract class McAxios {
 		};
 	}
 
-	private resolveHandler(
-		handler: Function | symbol | undefined,
-		symbolMap: Map<symbol, string>,
-	): ((...args: unknown[]) => Promise<unknown>) | undefined {
+	private resolveHandler(handler: Function | symbol | undefined, symbolMap: Map<symbol, string>): ((...args: unknown[]) => Promise<unknown>) | undefined {
 		if (isSymbol(handler)) {
 			const methodName = symbolMap.get(handler);
 			if (methodName) return (...args: unknown[]) => (this as unknown as Record<string, Function>)[methodName](...args);
@@ -88,13 +174,17 @@ export default abstract class McAxios {
 		responseType: unknown,
 		resolvedSuccess: ((...args: unknown[]) => Promise<unknown>) | undefined,
 		resolvedError: ((...args: unknown[]) => Promise<unknown>) | undefined,
+		customExecutor?: Executor<unknown>,
 	): (...args: unknown[]) => Promise<unknown> {
 		return async (...args: unknown[]) => {
 			const data = args.find((a) => a instanceof FormData);
-			const apiFunc = async () =>
-				this._axios.request({ method: "POST", url, data, headers: { "Content-Type": "multipart/form-data" } });
+			const apiFunc = async () => this._axios.request({ method: "POST", url, data, headers: { "Content-Type": "multipart/form-data" } });
 			try {
 				const response = await apiFunc();
+				if (customExecutor) {
+					const result = await new Promise<unknown>((res, rej) => customExecutor(response, res, rej));
+					return resolvedSuccess ? await resolvedSuccess(result, apiFunc) : result;
+				}
 				if (resolvedSuccess) return new (responseType as new (res: unknown) => unknown)(await resolvedSuccess(response, apiFunc));
 				if (responseType) return new (responseType as new (res: unknown) => unknown)(response);
 				return response.data;
@@ -117,6 +207,7 @@ export default abstract class McAxios {
 		responseType: unknown,
 		resolvedSuccess: ((...args: unknown[]) => Promise<unknown>) | undefined,
 		resolvedError: ((...args: unknown[]) => Promise<unknown>) | undefined,
+		customExecutor?: Executor<unknown>,
 	): (...args: unknown[]) => Promise<unknown> {
 		return async (...args: unknown[]) => {
 			let url = path;
@@ -124,11 +215,7 @@ export default abstract class McAxios {
 				url = url.replace(`{${key}}`, encodeURIComponent(String(args[index])));
 			}
 
-			// @REQUEST 명시 시 해당 인덱스 사용, 생략 시 instanceof McRequest 자동 감지
-			const request =
-				requestOverride !== undefined && requestOverride >= 0
-					? args[requestOverride]
-					: args.find((a) => a instanceof McRequest);
+			const request = requestOverride !== undefined && requestOverride >= 0 ? args[requestOverride] : args.find((a) => a instanceof McRequest);
 			const data = request !== undefined ? (request as McRequest).toJson() : undefined;
 
 			const apiFunc = async () => {
@@ -141,6 +228,12 @@ export default abstract class McAxios {
 
 			try {
 				const response = await apiFunc();
+				if (customExecutor) {
+					// User's executor decides resolve/reject.
+					// After resolve, @SUCCESS_HANDLER chains on the result (without ResponseType re-wrap).
+					const result = await new Promise<unknown>((res, rej) => customExecutor(response, res, rej));
+					return resolvedSuccess ? await resolvedSuccess(result, apiFunc) : result;
+				}
 				if (resolvedSuccess) return new (responseType as new (res: unknown) => unknown)(await resolvedSuccess(response, apiFunc));
 				if (responseType) return new (responseType as new (res: unknown) => unknown)(response);
 				return response.data;
@@ -166,13 +259,15 @@ export default abstract class McAxios {
 			const { method, path, fn, successHandler, errorHandler, responseType, headerParam, pathOverride, requestOverride, symbolMap } = meta;
 			const resolvedSuccess = this.resolveHandler(successHandler, symbolMap);
 			const resolvedError = this.resolveHandler(errorHandler, symbolMap);
-			// 자동 감지 후 명시적 @PATH 오버라이드 병합 (명시가 우선)
 			const pathParams = { ...buildAutoPathParams(path, extractParamNames(fn as Function)), ...pathOverride };
+
+			// Probe the method body for a dispatch(executor) sentinel.
+			const customExecutor = this.probeExecutor(fn as Function);
 
 			const endpointFn =
 				method === "MULTIPART"
-					? this.buildMultipartEndpoint(path, responseType, resolvedSuccess, resolvedError)
-					: this.buildRequestEndpoint(method, path, pathParams, headerParam, requestOverride, responseType, resolvedSuccess, resolvedError);
+					? this.buildMultipartEndpoint(path, responseType, resolvedSuccess, resolvedError, customExecutor)
+					: this.buildRequestEndpoint(method, path, pathParams, headerParam, requestOverride, responseType, resolvedSuccess, resolvedError, customExecutor);
 
 			Object.defineProperty(this, name, { value: endpointFn });
 		}

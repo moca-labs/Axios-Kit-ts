@@ -30,8 +30,8 @@ async function run() {
   <div class="scenario-header">
     <div class="scenario-title">04 — HEADER</div>
     <div class="scenario-desc">
-      <code>@McAxios.HEADER("헤더명", "파라미터명")</code> 으로 메서드 인자를 HTTP 요청 헤더에 주입합니다.<br />
-      인덱스 대신 파라미터 이름을 사용하므로 인자 순서가 바뀌어도 바인딩이 깨지지 않습니다.
+      <code>@McAxios.HEADER("헤더명", index)</code> 으로 메서드 인자를 HTTP 요청 헤더에 주입합니다.<br />
+      선언 스타일에서는 인덱스(숫자)로 직접 지정하고, 함수 body 스타일에서는 파라미터 이름(문자열)도 사용 가능합니다.
     </div>
   </div>
 
@@ -41,13 +41,8 @@ async function run() {
       <div class="panel-body">
         <div class="code-block">
           <pre><span class="dec">@McAxios.GET</span>(<span class="str">`${BASE}/users/{id}`</span>, <span class="cls">UserEntity</span>)
-<span class="dec">@McAxios.HEADER</span>(<span class="str">"X-Custom-Token"</span>, <span class="str">"token"</span>)  <span class="cmt">// 파라미터명으로 바인딩</span>
-<span class="fn">getUser</span>(
-  id: <span class="ty">string</span>,
-  token: <span class="ty">string</span>,
-): <span class="ty">Promise</span>&lt;<span class="cls">UserEntity</span>&gt; {
-  <span class="kw">return</span> <span class="kw">this</span>.<span class="fn">stub</span>();
-}
+<span class="dec">@McAxios.HEADER</span>(<span class="str">"X-Custom-Token"</span>, <span class="num">1</span>)  <span class="cmt">// arg 1을 헤더로 주입</span>
+<span class="fn">getUser</span>!: (id: <span class="ty">string</span>, token: <span class="ty">string</span>) =&gt; <span class="ty">Promise</span>&lt;<span class="cls">UserEntity</span>&gt;;
 
 <span class="cmt">// 호출 예:</span>
 <span class="cmt">// getUser("1", "my-secret-token")</span>

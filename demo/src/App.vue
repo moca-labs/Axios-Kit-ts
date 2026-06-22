@@ -7,6 +7,7 @@ import S04Header from "./components/scenarios/S04Header.vue";
 import S05Handlers from "./components/scenarios/S05Handlers.vue";
 import S06PathExplicit from "./components/scenarios/S06PathExplicit.vue";
 import S07RequestExplicit from "./components/scenarios/S07RequestExplicit.vue";
+import S08Dispatch from "./components/scenarios/S08Dispatch.vue";
 
 const tabs: Array<{ id: string; label: string; tag: string; component: Component }> = [
   { id: "s01", label: "GET", tag: "01", component: markRaw(S01Get) },
@@ -16,6 +17,7 @@ const tabs: Array<{ id: string; label: string; tag: string; component: Component
   { id: "s05", label: "핸들러", tag: "05", component: markRaw(S05Handlers) },
   { id: "s06", label: "@PATH 명시", tag: "06", component: markRaw(S06PathExplicit) },
   { id: "s07", label: "@REQUEST 명시", tag: "07", component: markRaw(S07RequestExplicit) },
+  { id: "s08", label: "응답 직접 처리", tag: "08", component: markRaw(S08Dispatch) },
 ];
 
 // biome-ignore lint/correctness/noUnusedVariables: used in Vue template

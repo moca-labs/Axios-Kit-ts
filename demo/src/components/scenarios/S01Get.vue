@@ -48,9 +48,7 @@ async function run() {
 
 <span class="cmt">// api.ts</span>
 <span class="dec">@McAxios.GET</span>(<span class="str">`${BASE}/posts/1`</span>, <span class="cls">PostEntity</span>)
-<span class="fn">getFirstPost</span>(): <span class="ty">Promise</span>&lt;<span class="cls">PostEntity</span>&gt; {
-  <span class="kw">return</span> <span class="kw">this</span>.<span class="fn">stub</span>();
-}</pre>
+<span class="fn">getFirstPost</span>!: () =&gt; <span class="ty">Promise</span>&lt;<span class="cls">PostEntity</span>&gt;;</pre>
         </div>
       </div>
     </div>

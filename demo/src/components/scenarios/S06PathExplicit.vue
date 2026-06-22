@@ -29,8 +29,8 @@ async function run() {
   <div class="scenario-header">
     <div class="scenario-title">06 — @PATH 명시</div>
     <div class="scenario-desc">
-      URL 플레이스홀더 이름과 파라미터 이름이 다를 때 <code>@McAxios.PATH("urlKey", "paramName")</code> 으로 명시합니다.<br />
-      생략하면 자동 감지, 이름이 다를 경우에만 필요합니다.
+      URL 플레이스홀더와 파라미터 이름이 달라도 <code>@McAxios.PATH("urlKey", index)</code> 로 인수 인덱스를 명시해 매핑합니다.<br />
+      선언 스타일(<code>!</code>)에서는 이름 대신 <strong>인덱스(숫자)</strong>로 지정합니다.
     </div>
   </div>
 
@@ -39,15 +39,15 @@ async function run() {
       <div class="panel-header"><span class="dot"></span> 데코레이터 정의</div>
       <div class="panel-body">
         <div class="code-block">
-          <pre><span class="cmt">// ✅ 자동 감지: 파라미터명 = URL 플레이스홀더명</span>
+          <pre><span class="cmt">// ✅ 이름이 같으면 @PATH 불필요 (URL 순서 자동 매핑)</span>
 <span class="dec">@McAxios.GET</span>(<span class="str">`${BASE}/posts/{id}`</span>, <span class="cls">PostEntity</span>)
-<span class="fn">getPost</span>(id: <span class="ty">string</span>) { ... }
+<span class="fn">getPost</span>!: (id: <span class="ty">string</span>) =&gt; <span class="ty">Promise</span>&lt;<span class="cls">PostEntity</span>&gt;;
 
-<span class="cmt">// ⚠️ 이름 불일치 → @PATH 명시 필요</span>
-<span class="cmt">// 미명시 시 {id}와 postId 가 달라 치환 안 됨</span>
+<span class="cmt">// ⚠️ 이름 불일치(postId ≠ {id}) → @PATH 명시</span>
+<span class="cmt">// 선언 스타일에서는 인덱스(숫자)로 지정</span>
 <span class="dec">@McAxios.GET</span>(<span class="str">`${BASE}/posts/{id}`</span>, <span class="cls">PostEntity</span>)
-<span class="dec">@McAxios.PATH</span>(<span class="str">"id"</span>, <span class="str">"postId"</span>)
-<span class="fn">getPostByPostId</span>(postId: <span class="ty">string</span>) { ... }
+<span class="dec">@McAxios.PATH</span>(<span class="str">"id"</span>, <span class="num">0</span>)  <span class="cmt">// {id} → arg 0</span>
+<span class="fn">getPostByPostId</span>!: (postId: <span class="ty">string</span>) =&gt; <span class="ty">Promise</span>&lt;<span class="cls">PostEntity</span>&gt;;
 
 <span class="cmt">// getPostByPostId("5") → GET /posts/5</span></pre>
         </div>
@@ -59,7 +59,7 @@ async function run() {
       <div class="panel-body">
         <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 12px;">
           파라미터명 <code>postId</code>가 URL 플레이스홀더 <code>{id}</code>와 다르지만<br />
-          <code>@McAxios.PATH("id", "postId")</code> 로 명시 매핑되어 정상 동작합니다.
+          <code>@McAxios.PATH("id", 0)</code> 으로 인덱스를 명시해 정상 동작합니다.
         </p>
         <div class="form-group">
           <label>Post ID (1 ~ 100)</label>

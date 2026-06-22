@@ -6,8 +6,19 @@ export const HANDLER_SYMBOL_MAP_KEY = Symbol("mc:handlerSymbolMap");
 export const HEADER_KEY = Symbol("mc:header");
 export const PATH_OVERRIDE_KEY = Symbol("mc:pathOverride");
 export const REQUEST_OVERRIDE_KEY = Symbol("mc:requestOverride");
+export const PARAM_NAMES_KEY = Symbol("mc:paramNames");
+// true when the field had an arrow-function initializer; false for bare `!` declarations.
+// Controls whether path params are mapped by name or by URL order.
+export const HAS_INITIALIZER_KEY = Symbol("mc:hasInitializer");
+// Stores the original arrow-function body so McAxios can probe it for dispatch() sentinels.
+export const BODY_FN_KEY = Symbol("mc:bodyFn");
 
+// Method-level metadata (method decorator style)
 const fnMeta = new WeakMap<Function, Map<symbol, unknown>>();
+
+// Field-level pending metadata: accumulates per-instance during field initialization
+// (used by inner decorators like @HEADER, @PATH before outer @GET reads it)
+const pendingFieldMeta = new WeakMap<object, Map<string | symbol, Map<symbol, unknown>>>();
 
 export function setFnMeta(fn: Function, key: symbol, value: unknown): void {
 	let m = fnMeta.get(fn);
@@ -22,54 +33,151 @@ export function getFnMeta(fn: Function, key: symbol): unknown {
 	return fnMeta.get(fn)?.get(key);
 }
 
+function setPendingMeta(instance: object, name: string | symbol, key: symbol, value: unknown): void {
+	let fields = pendingFieldMeta.get(instance);
+	if (!fields) { fields = new Map(); pendingFieldMeta.set(instance, fields); }
+	let meta = fields.get(name);
+	if (!meta) { meta = new Map(); fields.set(name, meta); }
+	meta.set(key, value);
+}
+
+function consumePendingMeta(instance: object, name: string | symbol): Map<symbol, unknown> {
+	const fields = pendingFieldMeta.get(instance);
+	const meta = fields?.get(name) ?? new Map<symbol, unknown>();
+	fields?.delete(name);
+	return meta;
+}
+
 export function extractParamNames(fn: Function): string[] {
 	const match = fn.toString().match(/^[^(]*\(([^)]*)\)/);
 	if (!match?.[1]?.trim()) return [];
 	return match[1]
 		.split(",")
-		.map((p) => p.trim().split(/[\s:=<>|&?]/)[0].trim())
+		.map((p) => p.trim().split(/[\s:=<>|&?]/)[0].trim().replace(/^_/, ""))
 		.filter(Boolean);
 }
 
-type MethodDec = (value: Function, context: ClassMethodDecoratorContext) => void;
+// Dual-mode decorator type: works as method decorator OR field decorator.
+// init returns `any` so TypeScript accepts it as the field's concrete type at each usage site.
+type DualDec = ((value: Function, ctx: ClassMethodDecoratorContext) => void) &
+	((value: undefined, ctx: ClassFieldDecoratorContext) => (this: object, init: any) => any);
 
-const createDecorator = (method: string, path: string, type: new (res: unknown) => unknown): MethodDec =>
-	(value, _ctx) => {
-		setFnMeta(value, METHOD_META_KEY, { method, path });
-		setFnMeta(value, RESPONSE_TYPE_KEY, type);
-	};
+// HTTP verb decorator — supports both method style and arrow-function field style
+//
+// Method style (current):     @GET(...)  getPost(): Promise<T> { return this.stub(); }
+// Field style  (new):         @GET(...)  getPost = (_id: string): Promise<T> => this.stub();
+// Body-free field style:      @GET(...)  getPost!: (id: string) => Promise<T>;
+const createDecorator = (method: string, path: string, type: new (res: unknown) => unknown): DualDec =>
+	((value: any, ctx: any): any => {
+		if (ctx.kind === "method") {
+			setFnMeta(value, METHOD_META_KEY, { method, path });
+			setFnMeta(value, RESPONSE_TYPE_KEY, type);
+		} else {
+			return function (this: object, initialFn: unknown) {
+				const paramNames = initialFn ? extractParamNames(initialFn as Function) : [];
+				const meta = consumePendingMeta(this, ctx.name);
+				meta.set(PARAM_NAMES_KEY, paramNames);
+				meta.set(HAS_INITIALIZER_KEY, initialFn != null);
+				if (initialFn != null) meta.set(BODY_FN_KEY, initialFn);
+				return (this as any).__buildFieldEndpoint(method, path, type, meta);
+			};
+		}
+	}) as DualDec;
 
-const handlerDec = (metaKey: symbol) => (fn: Function | symbol): MethodDec =>
-	(value, _ctx) => setFnMeta(value, metaKey, fn);
+// SUCCESS/ERROR handler reference decorator (dual-mode)
+const handlerDec =
+	(metaKey: symbol) =>
+	(fn: Function | symbol): DualDec =>
+		((value: any, ctx: any): any => {
+			if (ctx.kind === "method") {
+				setFnMeta(value, metaKey, fn);
+			} else {
+				return function (this: object, initialFn: unknown) {
+					setPendingMeta(this, ctx.name, metaKey, fn);
+					return initialFn;
+				};
+			}
+		}) as DualDec;
 
-const symbolMapDec = () => (sym: symbol): MethodDec =>
-	(value, _ctx) => setFnMeta(value, HANDLER_SYMBOL_MAP_KEY, sym);
+// SUCCESS_HANDLER / ERROR_HANDLER — always method-only (marks handler methods, not endpoints)
+const symbolMapDec =
+	() =>
+	(sym: symbol): ((value: Function, ctx: ClassMethodDecoratorContext) => void) =>
+	(value, _ctx) =>
+		setFnMeta(value, HANDLER_SYMBOL_MAP_KEY, sym);
 
-const headerDec = (headerName: string, paramName: string): MethodDec =>
-	(value, _ctx) => {
-		const idx = extractParamNames(value).indexOf(paramName);
-		const existing = (getFnMeta(value, HEADER_KEY) as Record<string, number>) ?? {};
-		existing[headerName] = idx >= 0 ? idx : -1;
-		setFnMeta(value, HEADER_KEY, existing);
-	};
+// @HEADER("X-Header", "paramName" | index) — dual-mode
+// Pass a string (param name) when using arrow-function body style.
+// Pass a number (arg index) when using the body-free `!` declaration style.
+const headerDec = (headerName: string, paramNameOrIndex: string | number): DualDec =>
+	((value: any, ctx: any): any => {
+		const resolveIdx = (fn: unknown) =>
+			typeof paramNameOrIndex === "number"
+				? paramNameOrIndex
+				: fn
+					? extractParamNames(fn as Function).indexOf(paramNameOrIndex)
+					: -1;
+		if (ctx.kind === "method") {
+			const existing = (getFnMeta(value, HEADER_KEY) as Record<string, number>) ?? {};
+			existing[headerName] = resolveIdx(value);
+			setFnMeta(value, HEADER_KEY, existing);
+		} else {
+			return function (this: object, initialFn: unknown) {
+				const existingHdr =
+					(pendingFieldMeta.get(this)?.get(ctx.name)?.get(HEADER_KEY) as Record<string, number>) ?? {};
+				existingHdr[headerName] = resolveIdx(initialFn);
+				setPendingMeta(this, ctx.name, HEADER_KEY, existingHdr);
+				return initialFn;
+			};
+		}
+	}) as DualDec;
 
-// @McAxios.PATH("urlKey", "paramName") — {urlKey}를 paramName 인자로 명시 치환
-// 생략 시 URL 플레이스홀더명과 파라미터명이 일치하면 자동 감지
-const pathDec = (urlKey: string, paramName: string): MethodDec =>
-	(value, _ctx) => {
-		const idx = extractParamNames(value).indexOf(paramName);
-		const existing = (getFnMeta(value, PATH_OVERRIDE_KEY) as Record<string, number>) ?? {};
-		existing[urlKey] = idx >= 0 ? idx : -1;
-		setFnMeta(value, PATH_OVERRIDE_KEY, existing);
-	};
+// @PATH("urlKey", "paramName" | index) — dual-mode
+// Pass a string (param name) when using arrow-function body style.
+// Pass a number (arg index) when using the body-free `!` declaration style.
+const pathDec = (urlKey: string, paramNameOrIndex: string | number): DualDec =>
+	((value: any, ctx: any): any => {
+		const resolveIdx = (fn: unknown) =>
+			typeof paramNameOrIndex === "number"
+				? paramNameOrIndex
+				: fn
+					? extractParamNames(fn as Function).indexOf(paramNameOrIndex)
+					: -1;
+		if (ctx.kind === "method") {
+			const existing = (getFnMeta(value, PATH_OVERRIDE_KEY) as Record<string, number>) ?? {};
+			existing[urlKey] = resolveIdx(value);
+			setFnMeta(value, PATH_OVERRIDE_KEY, existing);
+		} else {
+			return function (this: object, initialFn: unknown) {
+				const existingPath =
+					(pendingFieldMeta.get(this)?.get(ctx.name)?.get(PATH_OVERRIDE_KEY) as Record<string, number>) ?? {};
+				existingPath[urlKey] = resolveIdx(initialFn);
+				setPendingMeta(this, ctx.name, PATH_OVERRIDE_KEY, existingPath);
+				return initialFn;
+			};
+		}
+	}) as DualDec;
 
-// @McAxios.REQUEST("label", "paramName") — paramName 인자를 요청 바디로 명시 지정
-// 생략 시 McRequest 서브클래스 인자를 자동 감지
-const requestDec = (_label: string, paramName: string): MethodDec =>
-	(value, _ctx) => {
-		const idx = extractParamNames(value).indexOf(paramName);
-		setFnMeta(value, REQUEST_OVERRIDE_KEY, idx >= 0 ? idx : -1);
-	};
+// @REQUEST("label", "paramName" | index) — dual-mode
+// Pass a string (param name) when using arrow-function body style.
+// Pass a number (arg index) when using the body-free `!` declaration style.
+const requestDec = (_label: string, paramNameOrIndex: string | number): DualDec =>
+	((value: any, ctx: any): any => {
+		const resolveIdx = (fn: unknown) =>
+			typeof paramNameOrIndex === "number"
+				? paramNameOrIndex
+				: fn
+					? extractParamNames(fn as Function).indexOf(paramNameOrIndex)
+					: -1;
+		if (ctx.kind === "method") {
+			setFnMeta(value, REQUEST_OVERRIDE_KEY, resolveIdx(value));
+		} else {
+			return function (this: object, initialFn: unknown) {
+				setPendingMeta(this, ctx.name, REQUEST_OVERRIDE_KEY, resolveIdx(initialFn));
+				return initialFn;
+			};
+		}
+	}) as DualDec;
 
 const McAxiosDecorators = {
 	GET: (url: string, type: new (res: unknown) => unknown) => createDecorator("GET", url, type),

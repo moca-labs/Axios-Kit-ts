@@ -29,8 +29,8 @@ async function run() {
   <div class="scenario-header">
     <div class="scenario-title">02 — PATH</div>
     <div class="scenario-desc">
-      URL 템플릿의 <code>{id}</code> 플레이스홀더가 파라미터 이름 <code>id</code>와 자동으로 매핑됩니다.<br />
-      별도의 <code>@McAxios.PATH</code> 데코레이터 없이 파라미터 이름만으로 경로 치환이 동작합니다.
+      URL 템플릿의 <code>{id}</code> 플레이스홀더가 선언 순서 기준으로 첫 번째 인자(arg 0)에 자동 매핑됩니다.<br />
+      별도의 <code>@McAxios.PATH</code> 데코레이터 없이 URL 순서만으로 경로 치환이 동작합니다.
     </div>
   </div>
 
@@ -40,11 +40,9 @@ async function run() {
       <div class="panel-body">
         <div class="code-block">
           <pre><span class="dec">@McAxios.GET</span>(<span class="str">`${BASE}/posts/{id}`</span>, <span class="cls">PostEntity</span>)
-<span class="fn">getPost</span>(id: <span class="ty">string</span>): <span class="ty">Promise</span>&lt;<span class="cls">PostEntity</span>&gt; {
-  <span class="kw">return</span> <span class="kw">this</span>.<span class="fn">stub</span>();
-}
+<span class="fn">getPost</span>!: (id: <span class="ty">string</span>) =&gt; <span class="ty">Promise</span>&lt;<span class="cls">PostEntity</span>&gt;;
 
-<span class="cmt">// 파라미터명 'id'가 {id}에 자동 매핑됨:</span>
+<span class="cmt">// URL 순서로 {id} → arg 0 자동 매핑:</span>
 <span class="cmt">// getPost("5")  → GET /posts/5</span>
 <span class="cmt">// getPost("10") → GET /posts/10</span></pre>
         </div>
