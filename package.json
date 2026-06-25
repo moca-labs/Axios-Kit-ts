@@ -1,50 +1,50 @@
 {
-  "name": "@moca-labs/axios-kit-ts",
-  "version": "0.5.0",
-  "description": "Axios 기반 TypeScript API 클라이언트 Kit - 데코레이터 기반 HTTP 요청 관리",
-  "main": "dist/index.js",
-  "module": "dist/index.js",
-  "types": "dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.js"
-    }
-  },
-  "files": [
-    "dist"
-  ],
-  "scripts": {
-    "build": "rm -rf dist && tsc",
-    "prepublishOnly": "npm run build",
-    "demo": "npm --prefix demo install && npm --prefix demo run dev"
-  },
-  "keywords": [
-    "axios",
-    "typescript",
-    "decorator",
-    "http-client",
-    "moca-libs"
-  ],
-  "author": "IDEa Team",
-  "license": "Apache-2.0",
-  "peerDependencies": {
-    "@moca-labs/entity-kit-ts": "^0.3.1",
-    "axios": "^1.15.0"
-  },
-  "devDependencies": {
-    "@biomejs/biome": "^2.4.14",
-    "@types/node": "^25.2.0",
-    "axios": "^1.15.0",
-    "typescript": "^6.0.3"
-  },
-  "publishConfig": {
-    "access": "public",
-    "registry": "https://registry.npmjs.org"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/moca-labs/Axios-Kit-ts.git"
-  }
+	"name": "@moca-labs/axios-kit-ts",
+	"version": "0.5.1",
+	"description": "Axios 기반 TypeScript API 클라이언트 Kit - 데코레이터 기반 HTTP 요청 관리",
+	"main": "dist/index.js",
+	"module": "dist/index.js",
+	"types": "dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js",
+			"require": "./dist/index.js"
+		}
+	},
+	"files": [
+		"dist"
+	],
+	"scripts": {
+		"build": "rm -rf dist && tsc",
+		"prepublishOnly": "npm run build",
+		"demo": "npm --prefix demo install && npm --prefix demo run dev"
+	},
+	"keywords": [
+		"axios",
+		"typescript",
+		"decorator",
+		"http-client",
+		"moca-libs"
+	],
+	"author": "IDEa Team",
+	"license": "Apache-2.0",
+	"peerDependencies": {
+		"@moca-labs/entity-kit-ts": ">= ^0.4.0",
+		"axios": "^1.15.0"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.4.14",
+		"@types/node": "^25.2.0",
+		"axios": "^1.15.0",
+		"typescript": "^6.0.3"
+	},
+	"publishConfig": {
+		"access": "public",
+		"registry": "https://registry.npmjs.org"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/moca-labs/Axios-Kit-ts.git"
+	}
 }

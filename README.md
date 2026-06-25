@@ -365,13 +365,13 @@ class PostApi extends McAxios {
   getPost!: (id: string) => Promise<PostEntity>;
 
   @McAxios.SUCCESS_HANDLER(ON_SUCCESS)
-  onSuccess(response: AxiosResponse): AxiosResponse {
+  onSuccess!: (response: AxiosResponse) => AxiosResponse {
     console.log(`HTTP ${response.status}`);
     return response; // 반환값이 ResponseType 생성자에 전달됨
   }
 
   @McAxios.ERROR_HANDLER(ON_ERROR)
-  onError(err: unknown): undefined {
+  onError!: (err: unknown): undefined => {
     console.error((err as Error).message);
     return undefined; // undefined 반환 시 에러 재전파, 값 반환 시 해당 값으로 복구
   }

@@ -7,19 +7,20 @@ const result = ref<string>("");
 const status = ref<"idle" | "success" | "error">("idle");
 
 async function run() {
-  loading.value = true;
-  status.value = "idle";
-  result.value = "";
-  try {
-    const post = await api.getFirstPost();
-    result.value = JSON.stringify(post, null, 2);
-    status.value = "success";
-  } catch (e) {
-    result.value = (e as Error).message;
-    status.value = "error";
-  } finally {
-    loading.value = false;
-  }
+	loading.value = true;
+	status.value = "idle";
+	result.value = "";
+	console.log("dskafjlfjaklfjsalfdjklafjlj");
+	try {
+		const post = await api.getFirstPost();
+		result.value = JSON.stringify(post, null, 2);
+		status.value = "success";
+	} catch (e) {
+		result.value = (e as Error).message;
+		status.value = "error";
+	} finally {
+		loading.value = false;
+	}
 }
 </script>
 
@@ -40,10 +41,17 @@ async function run() {
           <pre><span class="cmt">// entities/PostEntity.ts</span>
 <span class="dec">@McEntity.ENTITY</span>
 <span class="kw">class</span> <span class="cls">PostEntity</span> {
-  <span class="dec">@McEntity.FIELD</span>(<span class="cls">Number</span>) id!: <span class="ty">number</span>;
-  <span class="dec">@McEntity.FIELD</span>(<span class="cls">Number</span>) userId!: <span class="ty">number</span>;
-  <span class="dec">@McEntity.FIELD</span>(<span class="cls">String</span>) title!: <span class="ty">string</span>;
-  <span class="dec">@McEntity.FIELD</span>(<span class="cls">String</span>) body!: <span class="ty">string</span>;
+  <span class="dec">@McEntity.FIELD</span>(<span class="cls">Number</span>)
+  id!: <span class="ty">number</span>;
+
+  <span class="dec">@McEntity.FIELD</span>(<span class="cls">Number</span>)
+  userId!: <span class="ty">number</span>;
+
+  <span class="dec">@McEntity.FIELD</span>(<span class="cls">String</span>)
+  title!: <span class="ty">string</span>;
+
+  <span class="dec">@McEntity.FIELD</span>(<span class="cls">String</span>)
+  body!: <span class="ty">string</span>;
 }
 
 <span class="cmt">// api.ts</span>

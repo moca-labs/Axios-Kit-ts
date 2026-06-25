@@ -9,22 +9,22 @@ const logs = ref<string[]>([]);
 const status = ref<"idle" | "success" | "error">("idle");
 
 async function run() {
-  if (!postId.value) return;
-  loading.value = true;
-  status.value = "idle";
-  result.value = "";
-  handlerApi.logs.length = 0;
-  try {
-    const post = await handlerApi.getPost(postId.value);
-    result.value = JSON.stringify(post, null, 2);
-    status.value = "success";
-  } catch (e) {
-    result.value = (e as Error).message;
-    status.value = "error";
-  } finally {
-    loading.value = false;
-    logs.value = [...handlerApi.logs];
-  }
+	if (!postId.value) return;
+	loading.value = true;
+	status.value = "idle";
+	result.value = "";
+	handlerApi.logs.length = 0;
+	try {
+		const post = await handlerApi.getPost(postId.value);
+		result.value = JSON.stringify(post, null, 2);
+		status.value = "success";
+	} catch (e) {
+		result.value = (e as Error).message;
+		status.value = "error";
+	} finally {
+		loading.value = false;
+		logs.value = [...handlerApi.logs];
+	}
 }
 </script>
 
@@ -53,7 +53,7 @@ async function run() {
 
   <span class="dec">@McAxios.SUCCESS_HANDLER</span>(ON_SUCCESS)
   <span class="fn">onSuccess</span>(response: <span class="ty">unknown</span>): <span class="ty">unknown</span> {
-    <span class="kw">this</span>.logs.<span class="fn">push</span>(<span class="str">`✅ HTTP ${r.status}`</span>);
+    <span class="kw">this</span>.logs.<span class="fn">push</span>(<span class="str">`✅ Post #${r.id}`</span>);
     <span class="kw">return</span> response; <span class="cmt">// 그대로 통과</span>
   }
 

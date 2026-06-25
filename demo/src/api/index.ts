@@ -1,5 +1,5 @@
 import McAxios from "@moca-labs/axios-kit-ts";
-import { AxiosHeaders, type AxiosResponse } from "axios";
+import { AxiosHeaders } from "axios";
 import { PostEntity } from "./entities/PostEntity";
 import { UserEntity } from "./entities/UserEntity";
 import { CreatePostRequest } from "./requests/CreatePostRequest";
@@ -28,12 +28,12 @@ class JsonPlaceholderApi extends McAxios {
 
 	// S04 - HEADER injection (인덱스로 직접 지정: arg 1)
 	@McAxios.GET(`${BASE}/users/{id}`, UserEntity)
-	@McAxios.HEADER("X-Custom-Token", 1)
+	@McAxios.HEADER("X-Custom-Token", "token")
 	getUser!: (id: string, token: string) => Promise<UserEntity>;
 
 	// S06 - @PATH 명시: 인덱스로 {id} → arg 0 를 명시 지정
 	@McAxios.GET(`${BASE}/posts/{id}`, PostEntity)
-	@McAxios.PATH("id", 0)
+	// @McAxios.PATH("id", 0)
 	getPostByPostId!: (postId: string) => Promise<PostEntity>;
 
 	// S07 - REQUEST 명시 (인덱스): 선언 스타일에서 arg 1 을 바디로 지정
@@ -71,8 +71,8 @@ class HandlerDemoApi extends McAxios {
 
 	@McAxios.SUCCESS_HANDLER(ON_SUCCESS)
 	onSuccess(response: unknown): unknown {
-		const r = response as AxiosResponse;
-		this.logs.push(`✅ HTTP ${r.status} — 성공 핸들러 실행됨`);
+		const r = response as PostEntity;
+		this.logs.push(`✅ Post #${r.id} — 성공 핸들러 실행됨`);
 		return response;
 	}
 
@@ -98,36 +98,46 @@ class DispatchDemoApi extends McAxios {
 
 	// ① dispatch() — 기본 동작 (field `!` 스타일과 동일한 결과)
 	@McAxios.GET(`${BASE}/posts/{id}`, PostEntity)
-	getPostDefault(_id: string): Promise<PostEntity> {
+	public getPostDefault(_id: string): Promise<PostEntity> {
 		return this.dispatch();
 	}
 
 	// ② dispatch(executor) — AxiosResponse를 직접 처리 후 resolve/reject 호출
 	@McAxios.GET(`${BASE}/posts/{id}`, PostEntity)
-	getPostCustom(_id: string): Promise<PostEntity> {
+	public getPostCustom(_id: string): Promise<PostEntity> {
 		return this.dispatch<PostEntity>((response, resolve, reject) => {
-			response.data?.id
-				? resolve(response.data as PostEntity)
-				: reject(new Error("응답 데이터가 비어 있습니다."));
+			response.data?.id ? resolve(response.data as PostEntity) : reject(new Error("응답 데이터가 비어 있습니다."));
 		});
 	}
 
 	// ③ dispatch(executor) + @SUCCESS_HANDLER — executor 처리 후 핸들러 체인
 	@McAxios.GET(`${BASE}/posts/{id}`, PostEntity)
 	@McAxios.SUCCESS(ON_DISPATCH_SUCCESS)
-	getPostWithHandler(_id: string): Promise<PostEntity> {
-		return this.dispatch<PostEntity>((response, resolve, reject) => {
-			response.data?.id
-				? resolve(response.data as PostEntity)
-				: reject(new Error("응답 데이터가 비어 있습니다."));
-		});
-	}
+	getPostWithHandler!: (_id: string) => Promise<PostEntity>;
+
+	@McAxios.GET(`${BASE}/posts/{id}`, PostEntity)
+	@McAxios.SUCCESS(ON_DISPATCH_SUCCESS)
+	getPostCustomWithHandler: (_id: string) => Promise<PostEntity> = (_id) => {
+		return this.dispatch();
+	};
+
+	// {
+	// 	return this.dispatch<PostEntity>((response, resolve, reject) => {
+	// 		response.data?.id ? resolve(this.onOtherDispatchSuccess(response.data as PostEntity)) : reject(new Error("응답 데이터가 비어 있습니다."));
+	// 	});
+	// }
 
 	@McAxios.SUCCESS_HANDLER(ON_DISPATCH_SUCCESS)
 	onDispatchSuccess(result: unknown): unknown {
 		const post = result as PostEntity;
 		this.logs.push(`✅ 핸들러 수행 — title: "${post.title}"`);
 		return result;
+	}
+
+	onOtherDispatchSuccess(result: PostEntity): PostEntity {
+		const post = result as PostEntity;
+		this.logs.push(`✅ 핸들러 수행 — title: "${post.title}"`);
+		return post;
 	}
 }
 

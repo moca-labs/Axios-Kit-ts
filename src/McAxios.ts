@@ -185,7 +185,10 @@ export default abstract class McAxios {
 					const result = await new Promise<unknown>((res, rej) => customExecutor(response, res, rej));
 					return resolvedSuccess ? await resolvedSuccess(result, apiFunc) : result;
 				}
-				if (resolvedSuccess) return new (responseType as new (res: unknown) => unknown)(await resolvedSuccess(response, apiFunc));
+				if (resolvedSuccess) {
+					const entity = responseType ? new (responseType as new (res: unknown) => unknown)(response) : response.data;
+					return await resolvedSuccess(entity, apiFunc);
+				}
 				if (responseType) return new (responseType as new (res: unknown) => unknown)(response);
 				return response.data;
 			} catch (reqErr) {
@@ -234,7 +237,10 @@ export default abstract class McAxios {
 					const result = await new Promise<unknown>((res, rej) => customExecutor(response, res, rej));
 					return resolvedSuccess ? await resolvedSuccess(result, apiFunc) : result;
 				}
-				if (resolvedSuccess) return new (responseType as new (res: unknown) => unknown)(await resolvedSuccess(response, apiFunc));
+				if (resolvedSuccess) {
+					const entity = responseType ? new (responseType as new (res: unknown) => unknown)(response) : response.data;
+					return await resolvedSuccess(entity, apiFunc);
+				}
 				if (responseType) return new (responseType as new (res: unknown) => unknown)(response);
 				return response.data;
 			} catch (reqErr) {
