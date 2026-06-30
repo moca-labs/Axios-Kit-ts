@@ -8,7 +8,7 @@
     "build": "vite build"
   },
   "dependencies": {
-    "@moca-labs/entity-kit-ts": "^0.3.1",
+    "@moca-labs/entity-kit-ts": "^0.6.0",
     "axios": "^1.15.0"
   },
   "devDependencies": {
