@@ -26,8 +26,10 @@ class JsonPlaceholderApi extends McAxios {
 	@McAxios.POST(`${BASE}/posts`, PostEntity)
 	createPost!: (req: CreatePostRequest) => Promise<PostEntity>;
 
-	// S04 - HEADER injection (인덱스로 직접 지정: arg 1)
-	@McAxios.GET(`${BASE}/users/{id}`, UserEntity)
+	// S04 - HEADER injection (이름 모드 + params로 minify-safe 하게 이름 고정)
+	// `!` 선언 스타일은 실제 함수 값이 없어 fn.toString() 리플렉션 자체가 불가능하므로
+	// 문자열 이름을 쓰려면 params 로 인자 이름을 명시해야 한다 (인덱스 모드였다면 params 불필요).
+	@McAxios.GET(`${BASE}/users/{id}`, UserEntity, ["id", "token"])
 	@McAxios.HEADER("X-Custom-Token", "token")
 	getUser!: (id: string, token: string) => Promise<UserEntity>;
 
@@ -41,10 +43,29 @@ class JsonPlaceholderApi extends McAxios {
 	@McAxios.REQUEST("body", 1)
 	updatePost!: (id: string, data: UpdatePostRequest) => Promise<PostEntity>;
 
-	// S07 - REQUEST 명시 (이름): dispatch 스타일에서 파라미터 이름으로 지정
-	@McAxios.PUT(`${BASE}/posts/{id}`, PostEntity)
+	// S07 - REQUEST 명시 (이름 + params): dispatch 스타일에서 파라미터 이름으로 지정.
+	// params 를 생략하면 fn.toString() 으로 "_id"/"_data" 를 리플렉션해서 알아내는데,
+	// 이 방식은 프로덕션 minify(식별자 mangling) 시 조용히 깨질 수 있다 — params 로 고정하면 안전.
+	@McAxios.PUT(`${BASE}/posts/{id}`, PostEntity, ["id", "data"])
 	@McAxios.REQUEST("body", "data")
 	updatePostByName(_id: string, _data: UpdatePostRequest): Promise<PostEntity> {
+		return this.dispatch();
+	}
+
+	// S09 - minify 안전성: 인자 이름을 실제 minifier가 그렇게 하듯 의미 없는 이름(`_a`, 리플렉션엔
+	// 선행 "_"가 제거되어 "a"로 읽힘)으로 지어서 "식별자가 mangling된 상태"를 흉내낸다.
+	//
+	// params 를 생략하면 {id} 매핑을 fn.toString() 리플렉션에 의존하는데, 리플렉션이 읽어내는
+	// 이름은 "a"이지 "id"가 아니므로 매핑에 실패해서 URL이 `.../posts/{id}` 그대로 나간다.
+	@McAxios.GET(`${BASE}/posts/{id}`, PostEntity)
+	getPostMangledUnsafe(_a: string): Promise<PostEntity> {
+		return this.dispatch();
+	}
+
+	// 반대로 params로 "id"를 명시하면, 실제 인자 이름이 무엇으로 mangling되든 상관없이
+	// 항상 arg 0을 {id}에 매핑한다 — 리터럴 문자열 배열이라 minify와 무관하게 안전하다.
+	@McAxios.GET(`${BASE}/posts/{id}`, PostEntity, ["id"])
+	getPostMangledSafe(_a: string): Promise<PostEntity> {
 		return this.dispatch();
 	}
 }

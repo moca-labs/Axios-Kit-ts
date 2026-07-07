@@ -189,18 +189,37 @@ class MyApi extends McAxios {
 ### HTTP 메서드 데코레이터
 
 ```
-@McAxios.GET(url, ResponseType)
-@McAxios.POST(url, ResponseType)
-@McAxios.PUT(url, ResponseType)
-@McAxios.DELETE(url, ResponseType)
-@McAxios.PATCH(url, ResponseType)
-@McAxios.MULTIPART(url, ResponseType)   // multipart/form-data — FormData 인자 자동 감지
+@McAxios.GET(url, ResponseType, params?)
+@McAxios.POST(url, ResponseType, params?)
+@McAxios.PUT(url, ResponseType, params?)
+@McAxios.DELETE(url, ResponseType, params?)
+@McAxios.PATCH(url, ResponseType, params?)
+@McAxios.MULTIPART(url, ResponseType, params?)   // multipart/form-data — FormData 인자 자동 감지
 ```
 
 | 인자 | 타입 | 설명 |
 |------|------|------|
 | `url` | `string` | 요청 URL. `{key}` 형식의 경로 파라미터 포함 가능 |
 | `ResponseType` | `class` | 응답을 매핑할 클래스. `new ResponseType(axiosResponse)` 로 인스턴스화됨 |
+| `params` | `readonly string[]` (선택) | 인자 순서대로 이름을 나열. `{key}` 자동 매핑과 `@PATH`/`@HEADER`/`@REQUEST` 의 이름 지정이 이 배열을 기준으로 동작함 |
+
+```ts
+@McAxios.PUT("https://api.example.com/posts/{id}", PostEntity, ["id", "data"])
+@McAxios.REQUEST("body", "data")
+updatePost(_id: string, _data: UpdatePostRequest): Promise<PostEntity> {
+  return this.dispatch();
+}
+```
+
+> ### ⚠️ `params` 를 생략하는 경우 반드시 읽어주세요
+>
+> `params` 를 생략하면, `{key}` 자동 매핑과 `@PATH`/`@HEADER`/`@REQUEST` 의 **이름(문자열) 지정 방식**은 메서드/필드의 실제 파라미터 이름을 `fn.toString()` 으로 파싱해서 얻습니다.
+>
+> 이 방식은 **프로덕션 빌드에서 minify(식별자 mangling)가 적용되면 조용히 깨집니다.** terser/esbuild/SWC 등은 기본 설정으로 지역 변수·파라미터 이름을 임의로 바꾸기 때문에, 배포된 빌드에서만 경로 파라미터가 `{id}`처럼 치환되지 않은 채 요청이 나가거나 엉뚱한 인자가 헤더/바디로 들어가는 문제가 발생할 수 있습니다. 이 실패는 **개발 환경에서는 재현되지 않고 minify 된 프로덕션 빌드에서만 나타나므로 발견하기 매우 어렵습니다.**
+>
+> 이 라이브러리를 상속하는 API 클래스에서 `params` 를 생략할 계획이라면, 다음 중 하나를 반드시 지켜야 합니다:
+> - **(권장)** `params` 를 항상 명시한다 — 리터럴 문자열 배열이라 minify 와 무관하게 항상 안전합니다.
+> - `params` 를 생략하려면, **`McAxios` 를 상속하는 모든 클래스가 정의된 파일(들)을 프로덕션 빌드의 minify(식별자 mangling) 대상에서 제외**해야 합니다. (예: 별도 청크로 분리 후 해당 청크만 `mangle: false`) 단, 이 설정은 번들러마다 지원 여부가 다르고, 새 API 클래스를 추가하거나 빌드 설정을 리팩터링할 때 실수로 깨지기 쉬우며 깨져도 별도 에러가 발생하지 않습니다. **가능하면 `params` 명시를 우선하세요.**
 
 ---
 
@@ -444,12 +463,12 @@ await postApi.getPost("1");
 
 | 데코레이터 | 인자 | 설명 |
 |-----------|------|------|
-| `@GET(url, Type)` | — | GET 요청 |
-| `@POST(url, Type)` | — | POST 요청 |
-| `@PUT(url, Type)` | — | PUT 요청 |
-| `@DELETE(url, Type)` | — | DELETE 요청 |
-| `@PATCH(url, Type)` | — | PATCH 요청 |
-| `@MULTIPART(url, Type)` | — | multipart/form-data POST |
+| `@GET(url, Type, params?)` | `params`: 이름 배열(선택, minify 안전) | GET 요청 |
+| `@POST(url, Type, params?)` | `params`: 이름 배열(선택, minify 안전) | POST 요청 |
+| `@PUT(url, Type, params?)` | `params`: 이름 배열(선택, minify 안전) | PUT 요청 |
+| `@DELETE(url, Type, params?)` | `params`: 이름 배열(선택, minify 안전) | DELETE 요청 |
+| `@PATCH(url, Type, params?)` | `params`: 이름 배열(선택, minify 안전) | PATCH 요청 |
+| `@MULTIPART(url, Type, params?)` | `params`: 이름 배열(선택, minify 안전) | multipart/form-data POST |
 | `@PATH(urlKey, param)` | `param`: 이름(string) 또는 인덱스(number) | 경로 파라미터 매핑 |
 | `@REQUEST(label, param)` | `param`: 이름(string) 또는 인덱스(number) | 요청 바디 지정 |
 | `@HEADER(name, param)` | `param`: 이름(string) 또는 인덱스(number) | 요청 헤더 추가 |
@@ -473,8 +492,9 @@ npm run demo
 | 01 — GET | 고정 URL GET 요청, `!` 선언 스타일 |
 | 02 — PATH | `{id}` 자동 매핑, URL 순서 기준 |
 | 03 — POST | `McRequest` 자동 감지, 요청 바디 전송 |
-| 04 — HEADER | `@HEADER` 로 인자를 HTTP 헤더에 주입 |
+| 04 — HEADER | `@HEADER` 로 인자를 HTTP 헤더에 주입, `params` 로 minify-safe 하게 이름 고정 |
 | 05 — 핸들러 | `@SUCCESS_HANDLER` / `@ERROR_HANDLER` |
 | 06 — @PATH 명시 | 이름 불일치 시 인덱스로 경로 파라미터 명시 |
-| 07 — @REQUEST 명시 | 인덱스(선언 스타일) vs 이름(dispatch 스타일) 비교 |
+| 07 — @REQUEST 명시 | 인덱스(선언 스타일) vs 이름 + `params`(dispatch 스타일) 비교 |
 | 08 — 응답 직접 처리 | `dispatch()` / `dispatch(executor)` / executor + 핸들러 체인 |
+| 09 — minify 안전성 | 인자 이름을 `a`로 지어 mangling 상태를 흉내내고, `params` 생략(위험) vs 명시(안전)를 비교 |
