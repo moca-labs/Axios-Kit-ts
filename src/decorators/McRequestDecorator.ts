@@ -10,23 +10,40 @@ import McMetaRegistry from "../core/meta/McMetaRegistry";
 // 적용되기 *전에* 적용되므로 (데코레이터는 아래에서 위로 적용됨) 실제 파라미터 이름(또는
 // 명시적 `params` 배열)이 아직 알려지지 않았다. 소유자인 HTTP 동사 데코레이터가 나중에
 // resolveFnNameRefs / resolvePendingNameRefs / resolveLegacyMeta를 통해 해결한다.
-export const REQUEST = (_label: string, paramNameOrIndex: string | number): DualDec =>
-	((arg0: any, arg1: any, arg2?: any): any => {
-		if (McDecoratorContext.isTC39Context(arg1)) {
-			if (arg1.kind === "method") {
-				McMetaRegistry.setFnMeta(arg0, REQUEST_OVERRIDE_KEY, paramNameOrIndex);
-			} else {
-				return function (this: object, initialFn: unknown) {
-					McMetaRegistry.setPendingMeta(this, arg1.name, REQUEST_OVERRIDE_KEY, paramNameOrIndex);
-					return initialFn;
-				};
+export default class McRequestDecorator {
+	private constructor() {}
+
+	static create(paramNameOrIndex: string | number): DualDec {
+		return ((arg0: any, arg1: any, arg2?: any): any => {
+			if (McDecoratorContext.isTC39Context(arg1)) {
+				return arg1.kind === "method" ? McRequestDecorator.applyToTC39Method(arg0, paramNameOrIndex) : McRequestDecorator.applyToTC39Field(arg1, paramNameOrIndex);
 			}
-		} else if (arg2 !== undefined) {
-			// 레거시 메서드 데코레이터
-			McMetaRegistry.setFnMeta(arg2.value, REQUEST_OVERRIDE_KEY, paramNameOrIndex);
-			return arg2;
-		} else {
-			// 레거시 프로퍼티 데코레이터: 미해결 상태로 저장 — @GET setter에서 해결된다
-			McMetaRegistry.setLegacyProtoPending(arg0, arg1, REQUEST_OVERRIDE_KEY, paramNameOrIndex);
-		}
-	}) as DualDec;
+			if (arg2 !== undefined) return McRequestDecorator.applyToLegacyMethod(arg2, paramNameOrIndex);
+			return McRequestDecorator.applyToLegacyProperty(arg0, arg1, paramNameOrIndex);
+		}) as DualDec;
+	}
+
+	private static applyToTC39Method(fn: Function, paramNameOrIndex: string | number): void {
+		McMetaRegistry.setFnMeta(fn, REQUEST_OVERRIDE_KEY, paramNameOrIndex);
+	}
+
+	private static applyToTC39Field(ctx: { name: string | symbol }, paramNameOrIndex: string | number) {
+		return function (this: object, initialFn: unknown) {
+			McMetaRegistry.setPendingMeta(this, ctx.name, REQUEST_OVERRIDE_KEY, paramNameOrIndex);
+			return initialFn;
+		};
+	}
+
+	// 레거시 메서드 데코레이터
+	private static applyToLegacyMethod(descriptor: any, paramNameOrIndex: string | number) {
+		McMetaRegistry.setFnMeta(descriptor.value, REQUEST_OVERRIDE_KEY, paramNameOrIndex);
+		return descriptor;
+	}
+
+	// 레거시 프로퍼티 데코레이터: 미해결 상태로 저장 — @GET setter에서 해결된다
+	private static applyToLegacyProperty(proto: object, propName: string | symbol, paramNameOrIndex: string | number): void {
+		McMetaRegistry.setLegacyProtoPending(proto, propName, REQUEST_OVERRIDE_KEY, paramNameOrIndex);
+	}
+}
+
+export const REQUEST = (_label: string, paramNameOrIndex: string | number): DualDec => McRequestDecorator.create(paramNameOrIndex);
