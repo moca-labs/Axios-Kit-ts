@@ -31,25 +31,16 @@ TC39 Stage 3 데코레이터를 사용합니다. `target: ES2022` 이상만 설�
 ## Vite 설정
 
 Vite 8은 OXC를 기본 TypeScript 변환기로 사용하며 TC39 데코레이터 lowering을 지원하지 않습니다.  
+peer로 이미 설치되어 있는 `@moca-labs/entity-kit-ts`가 제공하는 플러그인을 그대로 쓰면 됩니다.  
 `vite.config.ts` 에 아래 플러그인을 **다른 플러그인보다 먼저** 추가하세요.
 
 ```ts
-import { defineConfig, transformWithEsbuild } from "vite";
+import { entityKitPlugin } from "@moca-labs/entity-kit-ts/vite";
+import { defineConfig } from "vite";
 
 export default defineConfig({
   plugins: [
-    {
-      name: "lower-tc39-decorators",
-      enforce: "pre",
-      async transform(code, id) {
-        if (!/\.(ts|tsx)$/.test(id)) return null;
-        return transformWithEsbuild(code, id, {
-          target: "es2022",
-          supported: { decorators: false },
-          loader: id.endsWith(".tsx") ? "tsx" : "ts",
-        });
-      },
-    },
+    entityKitPlugin(),
     // ... 나머지 플러그인
   ],
 });
