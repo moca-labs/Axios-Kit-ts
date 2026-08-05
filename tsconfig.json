@@ -1,20 +1,18 @@
 {
-  "compilerOptions": {
-    "target": "ESNext",
-    "module": "ESNext",
-    "lib": ["ESNext", "DOM"],
-    "moduleResolution": "bundler",
-    "declaration": true,                // 타입 정의 파일(.d.ts) 생성 필수
-"outDir": "./dist",                 // 빌드 결과물 경로
-    "rootDir": "./src",
-    "strict": true,
-    "skipLibCheck": true,
-    "esModuleInterop": true,
-    "isolatedModules": false,           // 라이브러리 빌드 시 false 권장
-    "paths": {
-      "@/*": ["./src/*"]
-    }
-  },
-  "include": ["src/**/*.ts"],           // 배포할 소스 코드 경로
-  "exclude": ["node_modules", "dist", "**/*.spec.ts"]
+	"compilerOptions": {
+		"target": "ESNext",
+		"module": "ESNext",
+		"lib": ["ESNext", "DOM"],
+		"moduleResolution": "bundler",
+		"declaration": true, // 타입 정의 파일(.d.ts) 생성 필수
+		"outDir": "./dist", // 빌드 결과물 경로
+		"rootDir": "./src",
+		"strict": true,
+		"skipLibCheck": true,
+		"esModuleInterop": true,
+		"isolatedModules": false, // 라이브러리 빌드 시 false 권장
+		"types": ["node"]
+	},
+	"include": ["src/**/*.ts"], // 배포할 소스 코드 경로
+	"exclude": ["node_modules", "dist", "**/*.spec.ts"]
 }

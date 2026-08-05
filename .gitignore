@@ -1,4 +1,6 @@
 dist
 node_modules
-idea_mcl-mcl-axios-kit-0.0.1.tgz
 .npmrc
+.DS_Store
+.claude/
+.vscode/

@@ -18,7 +18,10 @@
 	"scripts": {
 		"build": "rm -rf dist && tsc",
 		"prepublishOnly": "npm run build",
-		"demo": "npm --prefix demo install && npm --prefix demo run dev"
+		"demo": "npm --prefix demo install && npm --prefix demo run dev",
+		"lint": "biome check .",
+		"format": "biome format --write .",
+		"format:check": "biome format ."
 	},
 	"keywords": [
 		"axios",
